@@ -26,6 +26,7 @@ install_public_headers(
         flush_buffers.h
         flush.h
         get.h
+        get_and_touch.h
         hash.h
         limits.h
         memcached.h
