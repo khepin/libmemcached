@@ -136,166 +136,165 @@ char *memcached_get_and_touch_by_key(memcached_st *shell, const char *group_key,
 //                                              *keys, const size_t *key_length, const size_t
 //                                              number_of_keys, const bool mget_mode);
 //
-// static memcached_return_t mget_by_key_real(memcached_st *ptr, const char *group_key,
-//                                            size_t group_key_length, const char *const *keys,
-//                                              const size_t *key_length, size_t number_of_keys,
-//                                              const bool mget_mode) {
-//   bool failures_occured_in_sending = false;
-//   const char *get_command = "get";
-//   uint8_t get_command_length = 3;
-//   unsigned int master_server_key = (unsigned int) -1; /* 0 is a valid server id! */
-//
-//   memcached_return_t rc;
-//   if (memcached_failed(rc = initialize_query(ptr, true))) {
-//     return rc;
-//   }
-//
-//   if (memcached_is_udp(ptr)) {
-//     return memcached_set_error(*ptr, MEMCACHED_NOT_SUPPORTED, MEMCACHED_AT);
-//   }
-//
-//   LIBMEMCACHED_MEMCACHED_MGET_START();
-//
-//   if (number_of_keys == 0) {
-//     return memcached_set_error(*ptr, MEMCACHED_INVALID_ARGUMENTS, MEMCACHED_AT,
-//                                memcached_literal_param("Numbers of keys provided was zero"));
-//   }
-//
-//   if (memcached_failed((rc = memcached_key_test(*ptr, keys, key_length, number_of_keys)))) {
-//     assert(memcached_last_error(ptr) == rc);
-//
-//     return rc;
-//   }
-//
-//   bool is_group_key_set = false;
-//   if (group_key and group_key_length) {
-//     master_server_key =
-//         memcached_generate_hash_with_redistribution(ptr, group_key, group_key_length);
-//     is_group_key_set = true;
-//   }
-//
-//   /*
-//     Here is where we pay for the non-block API. We need to remove any data sitting
-//     in the queue before we start our get.
-//
-//     It might be optimum to bounce the connection if count > some number.
-//   */
-//   for (uint32_t x = 0; x < memcached_server_count(ptr); x++) {
-//     memcached_instance_st *instance = memcached_instance_fetch(ptr, x);
-//
-//     if (instance->response_count()) {
-//       char buffer[MEMCACHED_DEFAULT_COMMAND_SIZE];
-//
-//       if (ptr->flags.no_block || ptr->flags.buffer_requests) {
-//         memcached_io_write(instance);
-//       }
-//
-//       while (instance->response_count()) {
-//         (void) memcached_response(instance, buffer, MEMCACHED_DEFAULT_COMMAND_SIZE,
-//         &ptr->result);
-//       }
-//     }
-//   }
-//
-//   if (memcached_is_binary(ptr)) {
-//     return binary_mget_by_key(ptr, master_server_key, is_group_key_set, keys, key_length,
-//                               number_of_keys, mget_mode);
-//   }
-//
-//   if (ptr->flags.support_cas) {
-//     get_command = "gets";
-//     get_command_length = 4;
-//   }
-//
-//   /*
-//     If a server fails we warn about errors and start all over with sending keys
-//     to the server.
-//   */
-//   WATCHPOINT_ASSERT(rc == MEMCACHED_SUCCESS);
-//   size_t hosts_connected = 0;
-//   for (uint32_t x = 0; x < number_of_keys; x++) {
-//     uint32_t server_key;
-//
-//     if (is_group_key_set) {
-//       server_key = master_server_key;
-//     } else {
-//       server_key = memcached_generate_hash_with_redistribution(ptr, keys[x], key_length[x]);
-//     }
-//
-//     memcached_instance_st *instance = memcached_instance_fetch(ptr, server_key);
-//
-//     libmemcached_io_vector_st vector[] = {
-//         {get_command, get_command_length},
-//         {memcached_literal_param(" ")},
-//         {memcached_array_string(ptr->_namespace), memcached_array_size(ptr->_namespace)},
-//         {keys[x], key_length[x]}};
-//
-//     if (instance->response_count() == 0) {
-//       rc = memcached_connect(instance);
-//
-//       if (memcached_failed(rc)) {
-//         memcached_set_error(*instance, rc, MEMCACHED_AT);
-//         continue;
-//       }
-//       hosts_connected++;
-//
-//       if ((memcached_io_writev(instance, vector, 1, false)) == false) {
-//         failures_occured_in_sending = true;
-//         continue;
-//       }
-//       WATCHPOINT_ASSERT(instance->cursor_active_ == 0);
-//       memcached_instance_response_increment(instance);
-//       WATCHPOINT_ASSERT(instance->cursor_active_ == 1);
-//     }
-//
-//     {
-//       if ((memcached_io_writev(instance, (vector + 1), 3, false)) == false) {
-//         memcached_instance_response_reset(instance);
-//         failures_occured_in_sending = true;
-//         continue;
-//       }
-//     }
-//   }
-//
-//   if (hosts_connected == 0) {
-//     LIBMEMCACHED_MEMCACHED_MGET_END();
-//
-//     if (memcached_failed(rc)) {
-//       return rc;
-//     }
-//
-//     return memcached_set_error(*ptr, MEMCACHED_NO_SERVERS, MEMCACHED_AT);
-//   }
-//
-//   /*
-//     Should we muddle on if some servers are dead?
-//   */
-//   bool success_happened = false;
-//   for (uint32_t x = 0; x < memcached_server_count(ptr); x++) {
-//     memcached_instance_st *instance = memcached_instance_fetch(ptr, x);
-//
-//     if (instance->response_count()) {
-//       /* We need to do something about non-connnected hosts in the future */
-//       if ((memcached_io_write(instance, "\r\n", 2, true)) == -1) {
-//         failures_occured_in_sending = true;
-//       } else {
-//         success_happened = true;
-//       }
-//     }
-//   }
-//
-//   LIBMEMCACHED_MEMCACHED_MGET_END();
-//
-//   if (failures_occured_in_sending and success_happened) {
-//     return MEMCACHED_SOME_ERRORS;
-//   }
-//
-//   if (success_happened) {
-//     return MEMCACHED_SUCCESS;
-//   }
-//
-//   return MEMCACHED_FAILURE; // Complete failure occurred
-// }
+static memcached_return_t mget_by_key_real(memcached_st *ptr, const char *group_key,
+                                           size_t group_key_length, const char *const *keys,
+                                           const size_t *key_length, size_t number_of_keys,
+                                           const bool mget_mode) {
+  bool failures_occured_in_sending = false;
+  const char *get_command = "get";
+  uint8_t get_command_length = 3;
+  unsigned int master_server_key = (unsigned int) -1; /* 0 is a valid server id! */
+
+  memcached_return_t rc;
+  if (memcached_failed(rc = initialize_query(ptr, true))) {
+    return rc;
+  }
+
+  if (memcached_is_udp(ptr)) {
+    return memcached_set_error(*ptr, MEMCACHED_NOT_SUPPORTED, MEMCACHED_AT);
+  }
+
+  LIBMEMCACHED_MEMCACHED_MGET_START();
+
+  if (number_of_keys == 0) {
+    return memcached_set_error(*ptr, MEMCACHED_INVALID_ARGUMENTS, MEMCACHED_AT,
+                               memcached_literal_param("Numbers of keys provided was zero"));
+  }
+
+  if (memcached_failed((rc = memcached_key_test(*ptr, keys, key_length, number_of_keys)))) {
+    assert(memcached_last_error(ptr) == rc);
+
+    return rc;
+  }
+
+  bool is_group_key_set = false;
+  if (group_key and group_key_length) {
+    master_server_key =
+        memcached_generate_hash_with_redistribution(ptr, group_key, group_key_length);
+    is_group_key_set = true;
+  }
+
+  /*
+    Here is where we pay for the non-block API. We need to remove any data sitting
+    in the queue before we start our get.
+
+    It might be optimum to bounce the connection if count > some number.
+  */
+  for (uint32_t x = 0; x < memcached_server_count(ptr); x++) {
+    memcached_instance_st *instance = memcached_instance_fetch(ptr, x);
+
+    if (instance->response_count()) {
+      char buffer[MEMCACHED_DEFAULT_COMMAND_SIZE];
+
+      if (ptr->flags.no_block || ptr->flags.buffer_requests) {
+        memcached_io_write(instance);
+      }
+
+      while (instance->response_count()) {
+        (void) memcached_response(instance, buffer, MEMCACHED_DEFAULT_COMMAND_SIZE, &ptr->result);
+      }
+    }
+  }
+
+  if (memcached_is_binary(ptr)) {
+    return binary_mget_by_key(ptr, master_server_key, is_group_key_set, keys, key_length,
+                              number_of_keys, mget_mode);
+  }
+
+  if (ptr->flags.support_cas) {
+    get_command = "gets";
+    get_command_length = 4;
+  }
+
+  /*
+    If a server fails we warn about errors and start all over with sending keys
+    to the server.
+  */
+  WATCHPOINT_ASSERT(rc == MEMCACHED_SUCCESS);
+  size_t hosts_connected = 0;
+  for (uint32_t x = 0; x < number_of_keys; x++) {
+    uint32_t server_key;
+
+    if (is_group_key_set) {
+      server_key = master_server_key;
+    } else {
+      server_key = memcached_generate_hash_with_redistribution(ptr, keys[x], key_length[x]);
+    }
+
+    memcached_instance_st *instance = memcached_instance_fetch(ptr, server_key);
+
+    libmemcached_io_vector_st vector[] = {
+        {get_command, get_command_length},
+        {memcached_literal_param(" ")},
+        {memcached_array_string(ptr->_namespace), memcached_array_size(ptr->_namespace)},
+        {keys[x], key_length[x]}};
+
+    if (instance->response_count() == 0) {
+      rc = memcached_connect(instance);
+
+      if (memcached_failed(rc)) {
+        memcached_set_error(*instance, rc, MEMCACHED_AT);
+        continue;
+      }
+      hosts_connected++;
+
+      if ((memcached_io_writev(instance, vector, 1, false)) == false) {
+        failures_occured_in_sending = true;
+        continue;
+      }
+      WATCHPOINT_ASSERT(instance->cursor_active_ == 0);
+      memcached_instance_response_increment(instance);
+      WATCHPOINT_ASSERT(instance->cursor_active_ == 1);
+    }
+
+    {
+      if ((memcached_io_writev(instance, (vector + 1), 3, false)) == false) {
+        memcached_instance_response_reset(instance);
+        failures_occured_in_sending = true;
+        continue;
+      }
+    }
+  }
+
+  if (hosts_connected == 0) {
+    LIBMEMCACHED_MEMCACHED_MGET_END();
+
+    if (memcached_failed(rc)) {
+      return rc;
+    }
+
+    return memcached_set_error(*ptr, MEMCACHED_NO_SERVERS, MEMCACHED_AT);
+  }
+
+  /*
+    Should we muddle on if some servers are dead?
+  */
+  bool success_happened = false;
+  for (uint32_t x = 0; x < memcached_server_count(ptr); x++) {
+    memcached_instance_st *instance = memcached_instance_fetch(ptr, x);
+
+    if (instance->response_count()) {
+      /* We need to do something about non-connnected hosts in the future */
+      if ((memcached_io_write(instance, "\r\n", 2, true)) == -1) {
+        failures_occured_in_sending = true;
+      } else {
+        success_happened = true;
+      }
+    }
+  }
+
+  LIBMEMCACHED_MEMCACHED_MGET_END();
+
+  if (failures_occured_in_sending and success_happened) {
+    return MEMCACHED_SOME_ERRORS;
+  }
+
+  if (success_happened) {
+    return MEMCACHED_SUCCESS;
+  }
+
+  return MEMCACHED_FAILURE; // Complete failure occurred
+}
 //
 // memcached_return_t memcached_mget_by_key(memcached_st *shell, const char *group_key,
 //                                          size_t group_key_length, const char *const *keys,
