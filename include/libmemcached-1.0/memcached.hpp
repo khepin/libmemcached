@@ -220,6 +220,33 @@ public:
     return false;
   }
 
+
+  /**
+   * Fetches an individual value from the server and updates its expiry time
+   *
+   * @param[in] key key of object whose value to get
+   * @param[out] ret_val object that is retrieved is stored in
+   *                     this vector
+   * @return true on success; false otherwise
+   */
+  bool getAndTouch(const std::string &key, time_t expiration, std::vector<char> &ret_val) {
+    uint32_t flags = 0;
+    memcached_return_t rc;
+    size_t value_length = 0;
+
+    char *value = memcached_get_and_touch(memc_, key.c_str(), key.length(), &value_length, expiration, &flags, &rc);
+    if (value != NULL && ret_val.empty()) {
+      ret_val.reserve(value_length + 1); // Always provide null
+      ret_val.assign(value, value + value_length + 1);
+      ret_val.resize(value_length);
+      free(value);
+
+      return true;
+    }
+
+    return false;
+  }
+
   /**
    * Fetches an individual from a server which is specified by
    * the master_key parameter that is used for determining which
